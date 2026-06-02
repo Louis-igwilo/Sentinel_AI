@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sentinel AI | Settings</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}">
+</head>
+<body>
+
+<nav class="sentinel-nav">
+  <div class="nav-brand-section">
+    <div class="nav-brand">SENTINEL <span class="accent">AI</span></div>
+  </div>
+  <div class="nav-tabs">
+    <a class="nav-tab {% if request.path.endswith('/overview') %}active{% endif %}" href="/dashboard/overview">Overview</a>
+    <a class="nav-tab {% if request.path.endswith('/investigation') %}active{% endif %}" href="/dashboard/investigation">Investigation</a>
+    <a class="nav-tab {% if request.path.endswith('/threats') %}active{% endif %}" href="/dashboard/threats">Threats</a>
+    <a class="nav-tab {% if request.path.endswith('/users') %}active{% endif %}" href="/dashboard/users">Users</a>
+    <a class="nav-tab {% if request.path.endswith('/logs') %}active{% endif %}" href="/dashboard/logs">Logs</a>
+    {% if session['analyst_role'] == 'admin' %}
+    <a class="nav-tab {% if request.path.endswith('/admin') %}active{% endif %}" href="/dashboard/admin">Admin</a>
+    {% endif %}
+    <a class="nav-tab active" href="/dashboard/settings">Settings</a>
+  </div>
+  <div class="nav-right">
+    <button id="theme-toggle" class="theme-toggle" type="button" title="Toggle light/dark mode">☀</button>
+    <div class="nav-operator">{{ session['analyst_name'] }}</div>
+    <a class="btn-terminate" href="/logout">Logout</a>
+  </div>
+</nav>
+
+<div class="page-container">
+  <div class="panel">
+    <div class="panel-header">System Settings</div>
+    <div class="panel-body">
+      <div class="form-group">
+        <label class="form-label">Analyst</label>
+        <div class="inv-field-value">{{ session['analyst_name'] }}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Role</label>
+        <div class="inv-field-value">{{ session['analyst_role'] }}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Auto-refresh interval (seconds)</label>
+        <input id="autoRefresh" class="form-input" type="number" min="5" max="120" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Model sensitivity</label>
+        <select id="modelSensitivity" class="form-input">
+          <option>Low</option>
+          <option>Medium</option>
+          <option>High</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Alert threshold</label>
+        <select id="alertThreshold" class="form-input">
+          <option>Low</option>
+          <option>Medium</option>
+          <option>High</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Warning email template</label>
+        <textarea id="warningTemplate" class="form-input" rows="4"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <button class="btn-primary" type="button" onclick="saveSettings()">Save Settings</button>
+        <span id="settingsMessage" style="color: var(--muted); font-size:0.9rem;"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function loadSettings() {
+  try {
+    const res = await fetch('/api/settings', { cache: 'no-store' });
+    if (!res.ok) throw new Error('Unable to load settings');
+    const settings = await res.json();
+    document.getElementById('autoRefresh').value = settings.auto_refresh || 18;
+    document.getElementById('modelSensitivity').value = settings.model_sensitivity || 'Medium';
+    document.getElementById('alertThreshold').value = settings.alert_threshold || 'Medium';
+    document.getElementById('warningTemplate').value = settings.warning_template || '';
+  } catch (error) {
+    document.getElementById('settingsMessage').innerText = 'Failed to load settings.';
+  }
+}
+
+async function saveSettings() {
+  const payload = {
+    auto_refresh: Number(document.getElementById('autoRefresh').value) || 18,
+    model_sensitivity: document.getElementById('modelSensitivity').value,
+    alert_threshold: document.getElementById('alertThreshold').value,
+    warning_template: document.getElementById('warningTemplate').value,
+  };
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Save failed');
+    document.getElementById('settingsMessage').innerText = 'Settings saved.';
+  } catch (error) {
+    document.getElementById('settingsMessage').innerText = 'Unable to save settings.';
+  }
+}
+
+loadSettings();
+</script>
+<script src="{{ url_for('static',filename='js/theme.js') }}"></script>
+</body>
+</html>

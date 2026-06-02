@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Logs | Sentinel Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css" />
+  </head>
+  <body>
+<nav class="sentinel-nav">
+  <div class="nav-brand-section">
+    <div class="nav-brand">SENTINEL <span class="accent">AI</span></div>
+  </div>
+  <div class="nav-tabs">
+    <a class="nav-tab {% if request.path.endswith('/overview') %}active{% endif %}" href="/dashboard/overview">Overview</a>
+    <a class="nav-tab {% if request.path.endswith('/investigation') %}active{% endif %}" href="/dashboard/investigation">Investigation</a>
+    <a class="nav-tab {% if request.path.endswith('/threats') %}active{% endif %}" href="/dashboard/threats">Threats</a>
+    <a class="nav-tab {% if request.path.endswith('/users') %}active{% endif %}" href="/dashboard/users">Users</a>
+    <a class="nav-tab active" href="/dashboard/logs">Logs</a>
+    {% if session['analyst_role'] == 'admin' %}
+    <a class="nav-tab {% if request.path.endswith('/admin') %}active{% endif %}" href="/dashboard/admin">Admin</a>
+    {% endif %}
+    <a class="nav-tab {% if request.path.endswith('/settings') %}active{% endif %}" href="/dashboard/settings">Settings</a>
+  </div>
+  <div class="nav-right">
+    <button id="theme-toggle" class="theme-toggle" type="button" title="Toggle light/dark mode">☀</button>
+    <div class="nav-operator">{{ session['analyst_name'] }}</div>
+    <a class="btn-terminate" href="/logout">Logout</a>
+  </div>
+</nav>
+
+<div class="page-container">
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-header">Security Event Log Archive</div>
+    <div class="panel-body">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div>
+          <div class="panel-title">Complete event log history</div>
+          <div class="panel-description">Browse the consolidated event stream and review suspicious user behavior before opening a case.</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="btn-primary" type="button" onclick="toggleInlineUploader()">Upload New Logs</button>
+          <button class="btn-icon-sm" type="button" onclick="downloadCSV()">⬇ Download CSV</button>
+          <span id="liveIndicator" style="font-weight:700;color:var(--accent);">LIVE</span>
+          <button id="pauseRefreshBtn" class="btn-icon-sm" type="button" onclick="toggleAutoRefresh()" title="Pause/resume auto-refresh">⏸ Pause</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">Event Log Table</div>
+    <div class="panel-body">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <input id="logSearch" type="search" placeholder="Search user, event, source, department, or risk" style="flex:1;min-width:220px;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);" />
+        <select id="logTypeSelect" onchange="updateLogTypeControls()" style="padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);">
+          <option value="processed" selected>Processed (Engineered)</option>
+          <option value="raw">Raw Logs</option>
+        </select>
+        <select id="rawSourceSelect" style="padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);display:none;">
+          <option value="">All sources</option>
+          <option value="login_logs">Login Logs</option>
+          <option value="email_logs">Email Logs</option>
+          <option value="file_logs">File Logs</option>
+          <option value="device_logs">Device Logs</option>
+          <option value="decoy_logs">Decoy Logs</option>
+          <option value="psychometric_logs">Psychometric Logs</option>
+        </select>
+        <label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:0.9rem;">
+          From <input id="downloadStartDate" type="date" style="padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);" />
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:0.9rem;">
+          To <input id="downloadEndDate" type="date" style="padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);" />
+        </label>
+        <button class="btn-primary" type="button" onclick="fetchLogList()">Refresh</button>
+      </div>
+
+      <!-- Inline uploader (hidden until toggled) -->
+      <div id="inlineUploadArea" style="display:none; margin-bottom:12px;">
+        <div class="file-upload-zone" id="inlineUploadZone">
+          <div style="font-size: 2rem; margin-bottom: 8px;">📁</div>
+          <div style="color: var(--text); font-weight: 600; margin-bottom: 4px;">Click to upload or drag file here</div>
+          <div style="color: var(--muted); font-size: 0.8rem;">Supported: CSV, JSON (Max 100 logs). Uploads shown as folders.</div>
+          <input type="file" id="inlineFileInput" accept=".csv,.json" style="display: none;" multiple>
+        </div>
+        <div id="inlineUploadStatus" style="margin-top: 12px; display:none; padding: 12px; background: var(--surface2); border-radius: 6px;">
+          <div id="inlineStatusMessage" style="color: var(--muted);"></div>
+          <div id="inlineUploadProgress" style="height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden;">
+            <div id="inlineProgressBar" style="height: 100%; background: var(--accent); width: 0%; transition: width 0.3s;"></div>
+          </div>
+        </div>
+        <div id="inlineFolders" style="margin-top:12px;"></div>
+      </div>
+
+      <div id="logsTableContainer"></div>
+    </div>
+  </div>
+</div>
+
+    <script>
+      function _createToast(text, isError=false) {
+        const toast = document.createElement('div');
+        toast.innerText = text;
+        toast.style.position = 'fixed';
+        toast.style.right = '18px';
+        toast.style.bottom = '18px';
+        toast.style.padding = '10px 14px';
+        toast.style.background = isError ? '#6b1d1d' : 'var(--surface2)';
+        toast.style.color = 'var(--text)';
+        toast.style.border = '1px solid var(--border)';
+        toast.style.borderRadius = '6px';
+        toast.style.zIndex = 60;
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.remove(); }, 4200);
+      }
+
+      async function updateLogTypeControls() {
+        const type = document.getElementById('logTypeSelect') ? document.getElementById('logTypeSelect').value : 'processed';
+        const sourceSelect = document.getElementById('rawSourceSelect');
+        if (sourceSelect) {
+          sourceSelect.style.display = type === 'raw' ? 'inline-flex' : 'none';
+        }
+      }
+
+      async function fetchLogList() {
+        const container = document.getElementById('logsTableContainer');
+        const query = document.getElementById('logSearch').value.toLowerCase().trim();
+        container.innerHTML = '<div class="empty-state">Loading logs…</div>';
+
+        try {
+          const type = document.getElementById('logTypeSelect') ? document.getElementById('logTypeSelect').value : 'processed';
+          const source = document.getElementById('rawSourceSelect') ? document.getElementById('rawSourceSelect').value : '';
+          const startDate = document.getElementById('downloadStartDate') ? document.getElementById('downloadStartDate').value : '';
+          const endDate = document.getElementById('downloadEndDate') ? document.getElementById('downloadEndDate').value : '';
+          const params = new URLSearchParams({ type, start_date: startDate, end_date: endDate });
+          if (type === 'raw' && source) {
+            params.set('source', source);
+          }
+          const response = await fetch('/api/logs/list?' + params.toString(), { cache: 'no-store' });
+          if (!response.ok) throw new Error('Unable to load logs');
+          const data = await response.json();
+          const logs = data.logs;
+
+          // If raw logs are returned as an object keyed by source, render sections per CSV
+          if (typeof logs === 'object' && !Array.isArray(logs)) {
+            const containerEl = document.createElement('div');
+            for (const [sourceName, rows] of Object.entries(logs)) {
+              // Section wrapper
+              const section = document.createElement('div');
+              section.style.marginBottom = '12px';
+
+              // Header with title and count + toggle
+              const header = document.createElement('div');
+              header.style.display = 'flex';
+              header.style.justifyContent = 'space-between';
+              header.style.alignItems = 'center';
+              header.style.padding = '6px 0';
+
+              const title = document.createElement('div');
+              title.style.fontWeight = 700;
+              title.innerText = sourceName.replace(/_/g, ' ').toUpperCase();
+
+              const right = document.createElement('div');
+              right.style.display = 'flex';
+              right.style.alignItems = 'center';
+              right.style.gap = '8px';
+
+              const count = document.createElement('div');
+              count.style.color = 'var(--muted)';
+              count.innerText = `(${rows ? rows.length : 0})`;
+
+              const btn = document.createElement('button');
+              btn.className = 'btn-icon-sm';
+              btn.type = 'button';
+              btn.innerText = rows && rows.length ? '▾' : '▸';
+
+              right.appendChild(count);
+              right.appendChild(btn);
+
+              header.appendChild(title);
+              header.appendChild(right);
+              section.appendChild(header);
+
+              if (!rows || rows.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-state';
+                empty.innerText = 'No records in this source.';
+                section.appendChild(empty);
+                containerEl.appendChild(section);
+                continue;
+              }
+
+              const bodyDiv = document.createElement('div');
+              bodyDiv.className = 'source-body';
+              bodyDiv.style.marginTop = '8px';
+
+              const table = document.createElement('table');
+              table.className = 'user-table';
+              table.innerHTML = `
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>User</th>
+                    <th>Department</th>
+                    <th>Event</th>
+                    <th>Source</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>`;
+
+              const tbody = table.querySelector('tbody');
+              rows.slice(0,200).forEach(log => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                  <td>${log.timestamp || log.date || '-'}</td>
+                  <td>${log.user_id || log.employee_id || '-'}</td>
+                  <td>${log.department || '-'}</td>
+                  <td>${log.action || log.login_status || log.decoy_file || log.category || '-'}</td>
+                  <td>${sourceName}</td>`;
+                tbody.appendChild(row);
+              });
+
+              bodyDiv.appendChild(table);
+              section.appendChild(bodyDiv);
+              containerEl.appendChild(section);
+
+              // Toggle collapse behavior
+              btn.addEventListener('click', () => {
+                if (bodyDiv.style.display === 'none') {
+                  bodyDiv.style.display = 'block';
+                  btn.innerText = '▾';
+                } else {
+                  bodyDiv.style.display = 'none';
+                  btn.innerText = '▸';
+                }
+              });
+
+              // Default: collapsed
+              bodyDiv.style.display = 'none';
+              btn.innerText = '▸';
+            }
+            container.innerHTML = '';
+            container.appendChild(containerEl);
+            return;
+          }
+
+          const filtered = Array.isArray(logs) ? logs.filter(log => {
+            return !query || [log.user_id, log.email, log.event_id, log.source, log.risk, log.category, log.hostname, log.department, log.team, log.supervisor]
+              .some(field => field && field.toString().toLowerCase().includes(query));
+          }) : [];
+
+          if (!filtered.length) {
+            container.innerHTML = '<div class="empty-state">No log rows matched the search criteria.</div>';
+            return;
+          }
+
+          const table = document.createElement('table');
+          table.className = 'user-table';
+          table.innerHTML = `
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>User</th>
+                <th>Email</th>
+                <th>Department</th>
+                <th>Team</th>
+                <th>Supervisor</th>
+                <th>Event</th>
+                <th>Source</th>
+                <th>Risk</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          `;
+
+          const tbody = table.querySelector('tbody');
+          filtered.slice(0, 200).forEach(log => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+              <td>${log.time_short || log.timestamp || '-'}</td>
+              <td>${log.user_id || '-'}</td>
+              <td>${log.email || '-'}</td>
+              <td>${log.department || '-'}</td>
+              <td>${log.team || '-'}</td>
+              <td>${log.supervisor || '-'}</td>
+              <td>${log.event_type || log.category || '-'}</td>
+              <td>${log.source || '-'}</td>
+              <td>${log.risk || '-'}</td>
+            `;
+            tbody.appendChild(row);
+          });
+
+          container.innerHTML = '';
+          container.appendChild(table);
+        } catch (error) {
+          container.innerHTML = '<div class="empty-state">Failed to load logs.</div>';
+          _createToast('Failed to load logs.', true);
+        }
+      }
+
+      // ── CSV Download ──────────────────────────────────────────────────
+      async function downloadCSV() {
+        markUserInteracting();
+        try {
+          const type = document.getElementById('logTypeSelect')?.value || 'processed';
+          const source = document.getElementById('rawSourceSelect')?.value || '';
+          const startDate = document.getElementById('downloadStartDate')?.value || '';
+          const endDate = document.getElementById('downloadEndDate')?.value || '';
+          const query = document.getElementById('logSearch')?.value || '';
+          const params = new URLSearchParams({ type, start_date: startDate, end_date: endDate, q: query });
+          if (type === 'raw' && source) params.set('source', source);
+          const response = await fetch('/api/logs/download?' + params.toString());
+          if (!response.ok) throw new Error('Download failed');
+          const data = await response.json();
+
+          let rows = [];
+          const logs = data.logs;
+          if (typeof logs === 'object' && !Array.isArray(logs)) {
+            for (const [src, srcRows] of Object.entries(logs)) {
+              if (!Array.isArray(srcRows) || !srcRows.length) continue;
+              srcRows.forEach(r => rows.push({ _source: src, ...r }));
+            }
+          } else if (Array.isArray(logs)) {
+            rows = logs;
+          }
+
+          if (!rows.length) { _createToast('No logs to download.'); return; }
+
+          const headerSet = new Set();
+          rows.slice(0, 50).forEach(r => Object.keys(r).forEach(k => headerSet.add(k)));
+          const headers = Array.from(headerSet);
+
+          const escape = v => {
+            if (v === null || v === undefined) return '';
+            const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+            return s.includes(',') || s.includes('"') || s.includes('\n')
+              ? `"${s.replace(/"/g, '""')}"` : s;
+          };
+
+          const csvLines = [headers.join(',')];
+          rows.forEach(r => csvLines.push(headers.map(h => escape(r[h])).join(',')));
+
+          const dateTag = startDate ? `_${startDate}` : '';
+          const typeTag = type === 'raw' ? (source || 'raw') : 'processed';
+          const filename = `sentinel-logs-${typeTag}${dateTag}-${new Date().toISOString().slice(0,10)}.csv`;
+
+          const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = url; anchor.download = filename;
+          document.body.appendChild(anchor); anchor.click();
+          document.body.removeChild(anchor);
+          URL.revokeObjectURL(url);
+          _createToast(`Downloaded ${rows.length} log entries as CSV.`);
+        } catch (error) {
+          _createToast('Could not download logs.', true);
+        }
+      }
+
+      // ── Auto-refresh (pauses when user is interacting) ─────────────────
+      let logRefreshTimer = null;
+      let autoRefreshPaused = false;
+      let _interactionTimeout = null;
+
+      function markUserInteracting() {
+        clearTimeout(_interactionTimeout);
+        _interactionTimeout = setTimeout(() => {}, 8000); // keeps interaction flag alive for 8s
+        window._userInteracting = true;
+        clearTimeout(window._interactionClear);
+        window._interactionClear = setTimeout(() => { window._userInteracting = false; }, 8000);
+      }
+
+      function toggleAutoRefresh() {
+        autoRefreshPaused = !autoRefreshPaused;
+        const btn = document.getElementById('pauseRefreshBtn');
+        const indicator = document.getElementById('liveIndicator');
+        if (autoRefreshPaused) {
+          if (btn) btn.innerText = '▶ Resume';
+          if (indicator) { indicator.innerText = 'PAUSED'; indicator.style.color = 'var(--muted)'; }
+        } else {
+          if (btn) btn.innerText = '⏸ Pause';
+          if (indicator) { indicator.innerText = 'LIVE'; indicator.style.color = 'var(--accent)'; }
+        }
+      }
+
+      function startLogAutoRefresh() {
+        if (logRefreshTimer) return;
+        logRefreshTimer = setInterval(() => {
+          if (!autoRefreshPaused && !window._userInteracting) {
+            fetchLogList();
+          }
+        }, 10000); // 10s instead of 3s — won't interrupt interactions
+      }
+
+      function stopLogAutoRefresh() {
+        if (!logRefreshTimer) return;
+        clearInterval(logRefreshTimer);
+        logRefreshTimer = null;
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        const searchInput = document.getElementById('logSearch');
+        const typeSelect = document.getElementById('logTypeSelect');
+        const sourceSelect = document.getElementById('rawSourceSelect');
+        const startDateInput = document.getElementById('downloadStartDate');
+        const endDateInput = document.getElementById('downloadEndDate');
+
+        [searchInput, typeSelect, sourceSelect, startDateInput, endDateInput].forEach(el => {
+          if (!el) return;
+          el.addEventListener('focus', markUserInteracting);
+          el.addEventListener('mousedown', markUserInteracting);
+          el.addEventListener('keydown', markUserInteracting);
+        });
+
+        if (searchInput) searchInput.addEventListener('input', () => { markUserInteracting(); fetchLogList(); });
+        if (typeSelect) typeSelect.addEventListener('change', () => { markUserInteracting(); updateLogTypeControls(); fetchLogList(); });
+        if (sourceSelect) sourceSelect.addEventListener('change', () => { markUserInteracting(); fetchLogList(); });
+        if (startDateInput) startDateInput.addEventListener('change', () => { markUserInteracting(); fetchLogList(); });
+        if (endDateInput) endDateInput.addEventListener('change', () => { markUserInteracting(); fetchLogList(); });
+
+        updateLogTypeControls();
+        fetchLogList();
+        setupInlineUploader();
+        startLogAutoRefresh();
+      });
+
+      // Inline uploader logic: toggle, handle multiple uploads, and show as folders
+      function toggleInlineUploader() {
+        const area = document.getElementById('inlineUploadArea');
+        if (!area) return;
+        area.style.display = area.style.display === 'none' ? 'block' : 'none';
+      }
+
+      function setupInlineUploader() {
+        const zone = document.getElementById('inlineUploadZone');
+        const input = document.getElementById('inlineFileInput');
+        if (!zone || !input) return;
+
+        zone.addEventListener('click', () => input.click());
+        zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+        zone.addEventListener('drop', (e) => {
+          e.preventDefault(); zone.classList.remove('dragover'); const files = e.dataTransfer.files; if (files.length) handleInlineFiles(files);
+        });
+
+        input.addEventListener('change', () => handleInlineFiles(input.files));
+      }
+
+      function handleInlineFiles(fileList) {
+        const files = Array.from(fileList || []);
+        files.forEach(f => uploadInlineFile(f));
+      }
+
+      async function uploadInlineFile(file) {
+        const status = document.getElementById('inlineUploadStatus');
+        const msg = document.getElementById('inlineStatusMessage');
+        const bar = document.getElementById('inlineProgressBar');
+        const folders = document.getElementById('inlineFolders');
+        if (!folders || !msg || !bar || !status) return;
+
+        status.style.display = 'block'; msg.innerText = 'Processing...'; bar.style.width = '20%';
+
+        const form = new FormData(); form.append('file', file);
+        try {
+          const resp = await fetch('/api/logs/upload', { method: 'POST', body: form });
+          bar.style.width = '70%';
+          if (!resp.ok) {
+            const err = await resp.json(); throw new Error(err.error || 'Upload failed');
+          }
+          const data = await resp.json();
+          bar.style.width = '100%'; msg.innerText = `Processed ${data.count} logs.`;
+
+          // Create a folder UI entry
+          const id = `upload-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+          const folder = document.createElement('div'); folder.className = 'upload-folder'; folder.dataset.id = id;
+          folder.style.border = '1px solid var(--border)'; folder.style.padding = '10px'; folder.style.borderRadius = '6px'; folder.style.marginBottom = '8px';
+          folder.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;">
+            <div><span class="mono">📁</span> <strong>${file.name}</strong> <span style="color:var(--muted); font-size:0.85rem; margin-left:8px;">(${data.count} records)</span></div>
+            <div><button class="btn-icon-sm">Expand</button></div>
+          </div>
+          <div class="folder-contents" style="display:none; margin-top:8px;"></div>`;
+
+          folders.prepend(folder);
+
+          const toggleBtn = folder.querySelector('button');
+          const contents = folder.querySelector('.folder-contents');
+          toggleBtn.addEventListener('click', (e) => { e.stopPropagation(); contents.style.display = contents.style.display === 'none' ? 'block' : 'none'; });
+          folder.addEventListener('click', () => { contents.style.display = contents.style.display === 'none' ? 'block' : 'none'; });
+
+          // Render results inside folder when expanded
+          const table = document.createElement('table'); table.className = 'user-table';
+          table.innerHTML = `<thead><tr><th>User</th><th>Risk</th><th>Score</th><th>Threat</th></tr></thead><tbody></tbody>`;
+          const tbody = table.querySelector('tbody');
+          (data.results || []).slice(0,50).forEach(r => {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${r.user_id||'-'}</td><td>${r.risk||'-'}</td><td>${r.score!=null?r.score.toFixed(4):'-'}</td><td>${r.threat_category||'-'}</td>`;
+            tbody.appendChild(row);
+          });
+          contents.appendChild(table);
+
+          // allow uploading more into this folder (append)
+          const addMore = document.createElement('div'); addMore.style.marginTop='8px';
+          addMore.innerHTML = `<input type="file" style="display:none" accept=".csv,.json"><button class="btn-resolve">Upload into folder</button>`;
+          contents.appendChild(addMore);
+          const input = addMore.querySelector('input'); const btn = addMore.querySelector('button');
+          btn.addEventListener('click', () => input.click());
+          input.addEventListener('change', async () => {
+            if (!input.files.length) return; const f = input.files[0];
+            const frm = new FormData(); frm.append('file', f);
+            const r = await fetch('/api/logs/upload', { method: 'POST', body: frm });
+            if (!r.ok) return; const nd = await r.json();
+            nd.results.slice(0,50).forEach(rw=>{ const tr=document.createElement('tr'); tr.innerHTML = `<td>${rw.user_id||'-'}</td><td>${rw.risk||'-'}</td><td>${rw.score!=null?rw.score.toFixed(4):'-'}</td><td>${rw.threat_category||'-'}</td>`; tbody.appendChild(tr); });
+            msg.innerText = `Appended ${nd.count} records to ${file.name}`;
+          });
+
+        } catch (err) {
+          msg.innerText = `Upload error: ${err.message}`; bar.style.width = '0%';
+        }
+      }
+
+    </script>
+    <script src="{{ url_for('static',filename='js/theme.js') }}"></script>
+  </body>
+</html>

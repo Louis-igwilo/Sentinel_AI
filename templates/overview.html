@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sentinel AI | Overview</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<nav class="sentinel-nav">
+  <div class="nav-brand-section">
+    <div class="nav-brand">SENTINEL <span class="accent">AI</span></div>
+  </div>
+  <div class="nav-tabs">
+    <a class="nav-tab {% if request.path.endswith('/overview') %}active{% endif %}" href="/dashboard/overview">Overview</a>
+    <a class="nav-tab {% if request.path.endswith('/investigation') %}active{% endif %}" href="/dashboard/investigation">Investigation</a>
+    <a class="nav-tab {% if request.path.endswith('/threats') %}active{% endif %}" href="/dashboard/threats">Threats</a>
+    <a class="nav-tab {% if request.path.endswith('/users') %}active{% endif %}" href="/dashboard/users">Users</a>
+    <a class="nav-tab {% if request.path.endswith('/logs') %}active{% endif %}" href="/dashboard/logs">Logs</a>
+    {% if session['analyst_role'] == 'admin' %}
+    <a class="nav-tab {% if request.path.endswith('/admin') %}active{% endif %}" href="/dashboard/admin">Admin</a>
+    {% endif %}
+    <a class="nav-tab {% if request.path.endswith('/settings') %}active{% endif %}" href="/dashboard/settings">Settings</a>
+  </div>
+  <div class="nav-right">
+    <button id="theme-toggle" class="theme-toggle" type="button" title="Toggle light/dark mode">☀</button>
+    <div class="nav-operator">{{ session['analyst_name'] }}</div>
+    <a class="btn-terminate" href="/logout">Logout</a>
+  </div>
+</nav>
+
+<div class="page-container">
+  <div class="overview-grid">
+    <div class="panel">
+      <div class="panel-header">Live Threat Queue</div>
+      <div id="alertContainer" class="alert-scroll panel-body">
+        <div class="empty-state">No active threats</div>
+      </div>
+    </div>
+
+    <div style="display: grid; gap: 12px;">
+      <div class="panel">
+        <div class="panel-header">Operational KPI Dashboard</div>
+        <div class="panel-body">
+          <div class="kpi-row">
+            <div class="kpi-card">
+              <div class="kpi-value" id="activeAlerts">0</div>
+              <div class="kpi-label">Active Alerts</div>
+            </div>
+            <div class="kpi-card risk-high">
+              <div class="kpi-value" id="highRisk">0</div>
+              <div class="kpi-label">High Risk</div>
+            </div>
+            <div class="kpi-card risk-medium">
+              <div class="kpi-value" id="mediumRisk">0</div>
+              <div class="kpi-label">Medium Risk</div>
+            </div>
+            <div class="kpi-card risk-low">
+              <div class="kpi-value" id="resolvedCount">0</div>
+              <div class="kpi-label">Resolved</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel log-feed-panel">
+        <div class="panel-header">Live SIEM Event Stream</div>
+        <div class="panel-body">
+          <div class="log-header-row">
+            <div class="col col-ts">Timestamp</div>
+            <div class="col col-eid">Event ID</div>
+            <div class="col col-user">User</div>
+            <div class="col col-dept">Category</div>
+            <div class="col col-ip">Source</div>
+            <div class="col col-host">Risk</div>
+          </div>
+          <div id="logFeed" class="log-feed">
+            <div class="empty-state">Waiting for event data</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel shap-panel">
+        <div class="panel-header">Feature Contribution</div>
+        <div class="panel-body chart-container">
+          <canvas id="shapChart"></canvas>
+          <div style="display:flex;gap:14px;justify-content:center;margin-top:12px;font-size:0.92rem;color:var(--muted);">
+            <span style="display:flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;border-radius:2px;background:rgba(220,53,69,0.8);"></span>Increases risk</span>
+            <span style="display:flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;border-radius:2px;background:rgba(40,167,69,0.8);"></span>Reduces risk</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel upload-panel">
+        <div class="panel-header">CSV/JSON Log Upload</div>
+        <div class="panel-body">
+          <div class="file-upload-zone" id="overviewUploadZone">
+            <div style="font-size: 1.75rem; margin-bottom: 6px;">📤</div>
+            <div style="color: var(--text); font-weight: 600; margin-bottom: 4px;">
+              Drag a CSV/JSON file here or click to select it.
+            </div>
+            <div style="color: var(--muted); font-size: 0.8rem;">
+              The upload will be sent to the model for analysis.
+            </div>
+            <input type="file" id="overviewFileInput" accept=".csv,.json" style="display:none;">
+          </div>
+          <div id="overviewUploadStatus" style="display:none; padding:12px; background: var(--surface2); border-radius:6px;">
+            <div id="overviewStatusMessage" style="color: var(--muted);"></div>
+            <div id="overviewUploadProgress" style="height:4px; background: var(--border); border-radius:2px; margin-top:8px; overflow:hidden;">
+              <div id="overviewProgressBar" style="height:100%; background: var(--accent); width:0%; transition: width 0.3s;"></div>
+            </div>
+          </div>
+          <div id="overviewResultsContainer"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel investigation-panel">
+      <div class="panel-header">Investigation Summary</div>
+      <div class="panel-body" id="investigationPanel">
+        <div class="empty-state">Select an alert from the queue to inspect details.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static',filename='js/theme.js') }}"></script>
+<script src="{{ url_for('static',filename='js/dashboard.js') }}"></script>
+</body>
+</html>

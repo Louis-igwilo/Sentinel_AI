@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sentinel AI | Threats</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}">
+</head>
+<body>
+
+<nav class="sentinel-nav">
+  <div class="nav-brand-section">
+    <div class="nav-brand">SENTINEL <span class="accent">AI</span></div>
+  </div>
+  <div class="nav-tabs">
+    <a class="nav-tab {% if request.path.endswith('/overview') %}active{% endif %}" href="/dashboard/overview">Overview</a>
+    <a class="nav-tab {% if request.path.endswith('/investigation') %}active{% endif %}" href="/dashboard/investigation">Investigation</a>
+    <a class="nav-tab {% if request.path.endswith('/threats') %}active{% endif %}" href="/dashboard/threats">Threats</a>
+    <a class="nav-tab {% if request.path.endswith('/users') %}active{% endif %}" href="/dashboard/users">Users</a>
+    <a class="nav-tab {% if request.path.endswith('/logs') %}active{% endif %}" href="/dashboard/logs">Logs</a>
+    {% if session['analyst_role'] == 'admin' %}
+    <a class="nav-tab {% if request.path.endswith('/admin') %}active{% endif %}" href="/dashboard/admin">Admin</a>
+    {% endif %}
+    <a class="nav-tab {% if request.path.endswith('/settings') %}active{% endif %}" href="/dashboard/settings">Settings</a>
+  </div>
+  <div class="nav-right">
+    <button id="theme-toggle" class="theme-toggle" type="button" title="Toggle light/dark mode">☀</button>
+    <div class="nav-operator">{{ session['analyst_name'] }}</div>
+    <a class="btn-terminate" href="/logout">Logout</a>
+  </div>
+</nav>
+
+<div class="page-container">
+  <div class="overview-grid">
+    <div class="panel">
+      <div class="panel-header">Threat Intelligence Dashboard</div>
+      <div class="panel-body stats-grid">
+        <div class="kpi-card risk-high">
+          <div class="kpi-value" id="activeAlerts">0</div>
+          <div class="kpi-label">Active Alerts</div>
+        </div>
+        <div class="kpi-card risk-medium">
+          <div class="kpi-value" id="highRiskCount">0</div>
+          <div class="kpi-label">High Risk</div>
+        </div>
+        <div class="kpi-card risk-low">
+          <div class="kpi-value" id="mediumRiskCount">0</div>
+          <div class="kpi-label">Medium Risk</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-value" id="openCases">0</div>
+          <div class="kpi-label">Open Cases</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">Top Threat Categories</div>
+      <div class="panel-body" id="topThreats" style="max-height: calc(100vh - 260px); overflow-y:auto;">
+        <div class="empty-state">Loading threat intelligence...</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">Threat Breakdown</div>
+      <div class="panel-body" id="threatBreakdown" style="max-height: calc(100vh - 260px); overflow-y:auto;">
+        <div class="empty-state">Loading threat breakdown...</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">Real-Time Threat Feed</div>
+      <div class="panel-body" id="threatFeed" style="max-height: calc(100vh - 260px); overflow-y:auto;">
+        <div class="empty-state">No threat updates available</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function _createToast(text, isError=false) {
+  const toast = document.createElement('div');
+  toast.innerText = text;
+  toast.style.position = 'fixed';
+  toast.style.right = '18px';
+  toast.style.bottom = '18px';
+  toast.style.padding = '10px 14px';
+  toast.style.background = isError ? '#6b1d1d' : 'var(--surface2)';
+  toast.style.color = 'var(--text)';
+  toast.style.border = '1px solid var(--border)';
+  toast.style.borderRadius = '6px';
+  toast.style.zIndex = 60;
+  document.body.appendChild(toast);
+  setTimeout(() => { toast.remove(); }, 4200);
+}
+
+async function loadThreats() {
+  try {
+    const response = await fetch('/api/stats', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Unable to load threat statistics');
+    const data = await response.json();
+
+    document.getElementById('activeAlerts').innerText = data.active_alerts || 0;
+    document.getElementById('highRiskCount').innerText = data.high_risk || 0;
+    document.getElementById('mediumRiskCount').innerText = data.medium_risk || 0;
+    document.getElementById('openCases').innerText = data.open_cases || 0;
+
+    const topThreats = document.getElementById('topThreats');
+    topThreats.innerHTML = '';
+    
+    if (data.top_threats && data.top_threats.length > 0) {
+      const table = document.createElement('table');
+      table.className = 'user-table';
+      table.innerHTML = '<thead><tr><th>Threat Type</th><th>Count</th></tr></thead><tbody></tbody>';
+      const tbody = table.querySelector('tbody');
+      
+      data.top_threats.forEach(([threat, count]) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td>${threat}</td><td style="font-weight:600;color:var(--accent);">${count}</td>`;
+        tbody.appendChild(row);
+      });
+      topThreats.appendChild(table);
+    } else {
+      topThreats.innerHTML = '<div class="empty-state">No threats detected yet</div>';
+    }
+
+    const breakdown = document.getElementById('threatBreakdown');
+    breakdown.innerHTML = '';
+    
+    if (data.threat_breakdown && Object.keys(data.threat_breakdown).length > 0) {
+      const items = Object.entries(data.threat_breakdown)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+      
+      items.forEach(([threat, count]) => {
+        const row = document.createElement('div');
+        row.className = 'timeline-event';
+        row.style.display = 'flex';
+        row.style.justifyContent = 'space-between';
+        row.style.alignItems = 'center';
+        row.innerHTML = `
+          <span>${threat}</span>
+          <span style="font-weight:600;color:var(--accent);">${count}</span>
+        `;
+        breakdown.appendChild(row);
+      });
+    } else {
+      breakdown.innerHTML = '<div class="empty-state">No threat data available</div>';
+    }
+
+    const feed = document.getElementById('threatFeed');
+    feed.innerHTML = '';
+    const items = [
+      `🔴 Active Alerts: ${data.active_alerts || 0}`,
+      `🟠 High Risk: ${data.high_risk || 0}`,
+      `🟡 Medium Risk: ${data.medium_risk || 0}`,
+      `📋 Open Cases: ${data.open_cases || 0}`,
+      `📊 Suspicious Signals: ${data.suspicious_signals || 0}`,
+      `✅ Resolved: ${data.resolved || 0}`,
+    ];
+
+    items.forEach(text => {
+      const row = document.createElement('div');
+      row.className = 'timeline-event';
+      row.textContent = text;
+      feed.appendChild(row);
+    });
+  } catch (error) {
+    document.getElementById('threatFeed').innerHTML = '<div class="empty-state">Threat feed unavailable</div>';
+    _createToast('Failed to load threat data.', true);
+  }
+}
+
+loadThreats();
+setInterval(loadThreats, 5000);
+</script>
+<script src="{{ url_for('static',filename='js/theme.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: sentinel-ai
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --threads 2 --timeout 60
+    envVars:
+      - key: SENTINEL_SECRET
+        generateValue: true
+      - key: PORT
+        value: 10000
+    disk:
+      name: sentinel-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

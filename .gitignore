@@ -1,0 +1,34 @@
+# CSV files
+*.csv
+
+# Excel files (optional)
+*.xlsx
+*.xls
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Environment variables
+.env
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Model files (optional if large)
+*.pkl
+*.joblib
+*.h5
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

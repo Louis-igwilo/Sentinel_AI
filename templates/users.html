@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sentinel AI | Users</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}">
+</head>
+<body>
+
+<nav class="sentinel-nav">
+  <div class="nav-brand-section">
+    <div class="nav-brand">SENTINEL <span class="accent">AI</span></div>
+  </div>
+  <div class="nav-tabs">
+    <a class="nav-tab {% if request.path.endswith('/overview') %}active{% endif %}" href="/dashboard/overview">Overview</a>
+    <a class="nav-tab {% if request.path.endswith('/investigation') %}active{% endif %}" href="/dashboard/investigation">Investigation</a>
+    <a class="nav-tab {% if request.path.endswith('/threats') %}active{% endif %}" href="/dashboard/threats">Threats</a>
+    <a class="nav-tab {% if request.path.endswith('/users') %}active{% endif %}" href="/dashboard/users">Users</a>
+    <a class="nav-tab {% if request.path.endswith('/logs') %}active{% endif %}" href="/dashboard/logs">Logs</a>
+    {% if session['analyst_role'] == 'admin' %}
+    <a class="nav-tab {% if request.path.endswith('/admin') %}active{% endif %}" href="/dashboard/admin">Admin</a>
+    {% endif %}
+    <a class="nav-tab {% if request.path.endswith('/settings') %}active{% endif %}" href="/dashboard/settings">Settings</a>
+  </div>
+  <div class="nav-right">
+    <button id="theme-toggle" class="theme-toggle" type="button" title="Toggle light/dark mode">☀</button>
+    <div class="nav-operator">{{ session['analyst_name'] }}</div>
+    <a class="btn-terminate" href="/logout">Logout</a>
+  </div>
+</nav>
+
+<div class="page-container">
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-header">Analyst Profile</div>
+    <div class="panel-body">
+      <div class="inv-name">{{ session['analyst_name'] }}</div>
+      <div class="inv-dept">Role: {{ session['analyst_role'] }}</div>
+      <div class="inv-field-row"><span class="inv-field-label">Email</span><span class="inv-field-value">{{ session['analyst_id'] }}</span></div>
+      <div class="inv-field-row"><span class="inv-field-label">Active Alerts</span><span class="inv-field-value" id="profileAlerts">0</span></div>
+      <div class="inv-field-row"><span class="inv-field-label">Open Cases</span><span class="inv-field-value" id="profileCases">0</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">Employee Directory</div>
+    <div class="panel-body">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <input id="employeeSearch" type="search" placeholder="Search by name, email, department, or supervisor" style="flex:1;min-width:220px;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);" />
+        <button class="btn-primary" type="button" onclick="loadEmployeeDirectory()">Refresh</button>
+      </div>
+      <div id="userDirectory"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function loadUserPage() {
+  try {
+    const statsRes = await fetch('/api/stats', { cache: 'no-store' });
+    const stats = statsRes.ok ? await statsRes.json() : {};
+    document.getElementById('profileAlerts').innerText = stats.active_alerts || 0;
+    document.getElementById('profileCases').innerText = stats.open_cases || 0;
+  } catch (error) {
+    // Silent failure — leave profile counts as defaults
+  }
+}
+
+async function loadEmployeeDirectory() {
+  const directory = document.getElementById('userDirectory');
+  const query = document.getElementById('employeeSearch').value.toLowerCase().trim();
+  directory.innerHTML = '<div class="empty-state">Loading employee directory…</div>';
+
+  try {
+    const res = await fetch('/api/employees', { cache: 'no-store' });
+    if (!res.ok) throw new Error('Unable to fetch employees');
+    const data = await res.json();
+
+    const employees = Array.isArray(data.employees) ? data.employees : [];
+    const filtered = employees.filter(user => {
+      return !query || [user.name, user.email, user.department, user.team, user.supervisor, user.reason]
+        .some(field => field && field.toString().toLowerCase().includes(query));
+    });
+
+    if (!filtered.length) {
+      directory.innerHTML = '<div class="empty-state">No employees matched the search criteria.</div>';
+      return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'user-table';
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Department</th>
+          <th>Unit</th>
+          <th>Team</th>
+          <th>Supervisor</th>
+          <th>Reason</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    `;
+
+    const tbody = table.querySelector('tbody');
+    filtered.slice(0, 120).forEach(user => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${user.name || '-'}</td>
+        <td>${user.email || '-'}</td>
+        <td>${user.department || '-'}</td>
+        <td>${user.business_unit || '-'}</td>
+        <td>${user.team || '-'}</td>
+        <td>${user.supervisor || '-'}</td>
+        <td>${user.reason || '-'}</td>
+        <td><button class="btn-primary" type="button" onclick="sendWarning('${user.user_id}','${user.email || ''}')">Send Warning</button></td>
+      `;
+      tbody.appendChild(row);
+    });
+
+    directory.innerHTML = '';
+    directory.appendChild(table);
+  } catch (error) {
+    directory.innerHTML = '<div class="empty-state">Unable to load employee directory.</div>';
+  }
+}
+
+function _createToast(text, isError=false) {
+  const toast = document.createElement('div');
+  toast.innerText = text;
+  toast.style.position = 'fixed';
+  toast.style.right = '18px';
+  toast.style.bottom = '18px';
+  toast.style.padding = '10px 14px';
+  toast.style.background = isError ? '#6b1d1d' : 'var(--surface2)';
+  toast.style.color = 'var(--text)';
+  toast.style.border = '1px solid var(--border)';
+  toast.style.borderRadius = '6px';
+  toast.style.zIndex = 60;
+  document.body.appendChild(toast);
+  setTimeout(() => { toast.remove(); }, 4200);
+}
+
+async function sendWarning(userId, userEmail) {
+  // create modal if not present
+  let modal = document.getElementById('warningModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'warningModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;padding:24px;z-index:60;';
+    modal.innerHTML = `
+      <div style="background:var(--surface1);color:var(--text);max-width:720px;width:100%;border-radius:8px;padding:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-weight:700;">Compose Warning</div>
+          <button id="warningModalClose" class="btn-resolve" type="button" style="background:transparent;border:none;">✕</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;gap:8px;align-items:center;"><label style="min-width:60px;color:var(--muted);">To</label><input id="warningTo" type="text" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);" readonly /></div>
+          <textarea id="warningBody" rows="6" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);">Please stop the suspicious behavior or your account may be locked.</textarea>
+          <div style="display:flex;gap:8px;justify-content:flex-end;"><button id="warningCancel" class="btn-secondary">Cancel</button><button id="warningSend" class="btn-primary">Send</button></div>
+          <div id="warningStatus" style="color:var(--muted);font-size:0.9rem;"></div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('warningModalClose').addEventListener('click', () => modal.style.display = 'none');
+    document.getElementById('warningCancel').addEventListener('click', () => modal.style.display = 'none');
+    document.getElementById('warningSend').addEventListener('click', async () => {
+      const body = document.getElementById('warningBody').value;
+      const status = document.getElementById('warningStatus');
+      try {
+        const resp = await fetch('/api/user/warn', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId, message: body }),
+        });
+        if (!resp.ok) throw new Error('send failed');
+        status.innerText = 'Warning queued.';
+        _createToast('Warning queued for ' + userId);
+        setTimeout(() => modal.style.display = 'none', 800);
+      } catch (err) {
+        status.innerText = 'Failed to send warning.';
+        _createToast('Failed to send warning', true);
+      }
+    });
+  }
+
+  document.getElementById('warningTo').value = userEmail || `${userId}@dtaa.com`;
+  document.getElementById('warningBody').value = document.getElementById('warningBody')?.value || 'Please stop the suspicious behavior or your account may be locked.';
+  modal.style.display = 'flex';
+}
+
+loadUserPage();
+loadEmployeeDirectory();
+document.getElementById('employeeSearch').addEventListener('input', loadEmployeeDirectory);
+</script>
+<script src="{{ url_for('static',filename='js/theme.js') }}"></script>
+</body>
+</html>

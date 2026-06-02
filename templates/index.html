@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en" id="html-root" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentinel AI | SOC Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ═══════════════════════════ NAVBAR ═══════════════════════════ -->
+<nav class="sentinel-nav">
+  <div class="nav-left">
+    <span class="nav-brand">🛡️ SENTINEL <span class="accent">AI</span></span>
+    <span class="nav-badge">SOC L2</span>
+  </div>
+
+  <div class="nav-kpis" id="kpi-row">
+    <div class="kpi-chip kpi-red"   id="kpi-high">— HIGH</div>
+    <div class="kpi-chip kpi-amber" id="kpi-medium">— MED</div>
+    <div class="kpi-chip kpi-blue"  id="kpi-events">— EVENTS</div>
+    <div class="kpi-chip kpi-green" id="kpi-resolved">— RESOLVED</div>
+  </div>
+
+  <div class="nav-right">
+    <span class="nav-operator">OPERATOR: <strong>{{ session['analyst_name'] }}</strong></span>
+    <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark mode">☀</button>
+    <a href="/logout" class="btn-terminate">TERMINATE SESSION</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════ MAIN GRID ═══════════════════════════ -->
+<div class="dash-grid">
+
+  <!-- ── LEFT: Alert Queue ── -->
+  <div class="panel panel-alerts">
+    <div class="panel-header">
+      <span>Active Threats</span>
+      <span class="badge-count" id="alert-count">0</span>
+    </div>
+    <div id="alert-list" class="alert-scroll"></div>
+  </div>
+
+  <!-- ── CENTRE: SHAP + Log Feed ── -->
+  <div class="panel-centre">
+
+    <!-- SHAP Chart -->
+    <div class="panel panel-shap">
+      <div class="panel-header">
+        <span>SHAP Feature Contribution Analysis</span>
+        <div class="shap-controls">
+          <span id="shap-user-label" class="shap-target"></span>
+          <button id="btn-expand-shap" class="btn-icon" style="display:none" title="Expand">⛶</button>
+        </div>
+      </div>
+      <div class="shap-placeholder" id="shap-placeholder">
+        <div class="placeholder-icon">📊</div>
+        <p>Select a threat from the left panel to view SHAP analysis</p>
+      </div>
+      <div class="chart-wrap" id="shap-chart-wrap" style="display:none">
+        <canvas id="shapChart"></canvas>
+      </div>
+    </div>
+
+    <!-- SIEM Log Feed -->
+    <div class="panel panel-log">
+      <div class="panel-header">
+        <span>Live Event Feed  <span class="mono muted" style="font-size:0.7rem">— SSMS / SIEM Format</span></span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="live-dot"></div>
+          <span class="mono muted" style="font-size:0.7rem">LIVE</span>
+          <button class="btn-icon" id="btn-pause" title="Pause feed">⏸</button>
+          <button class="btn-icon" id="btn-clear" title="Clear log">🗑</button>
+        </div>
+      </div>
+      <!-- Log Header row -->
+      <div class="log-header">
+        <span style="width:140px">Timestamp</span>
+        <span style="width:60px">EvtID</span>
+        <span style="width:90px">UserID</span>
+        <span style="width:140px">Category</span>
+        <span style="flex:1">Description</span>
+        <span style="width:70px">Risk</span>
+      </div>
+      <div id="log-feed" class="log-feed"></div>
+    </div>
+  </div>
+
+  <!-- ── RIGHT: Investigation Panel ── -->
+  <div class="panel panel-investigation" id="investigation-panel">
+    <div class="panel-header"><span>Investigation</span></div>
+    <div class="inv-empty" id="inv-empty">
+      <div style="font-size:2rem;margin-bottom:8px">🔍</div>
+      <p>Select an alert to begin investigation</p>
+    </div>
+    <div id="inv-content" style="display:none"></div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════ SHAP MODAL ═══════════════════════════ -->
+<div id="shap-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h5 id="modal-title">SHAP Analysis</h5>
+      <button id="btn-close-modal" class="btn-icon">✕ CLOSE</button>
+    </div>
+    <div class="modal-body">
+      <canvas id="fullShapChart"></canvas>
+    </div>
+    <div class="modal-footer">
+      <strong>SHAP Interpretation:</strong> Bars extending right (positive) indicate features that pushed the model toward an anomaly decision.
+      Bars extending left (negative) indicate features consistent with normal behaviour.
+      The magnitude shows relative contribution.
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ ADMIN PANEL ═══════════════════════════ -->
+{% if session['analyst_role'] == 'admin' %}
+<div id="admin-drawer" class="admin-drawer" style="display:none">
+  <div class="panel" style="padding:20px">
+    <div class="panel-header" style="margin-bottom:16px">
+      <span>Admin: Add New Analyst</span>
+      <button class="btn-icon" onclick="document.getElementById('admin-drawer').style.display='none'">✕</button>
+    </div>
+    <div class="field-row">
+      <input type="email"  id="new-email"    placeholder="analyst@dtaa.com"  class="inp">
+      <input type="text"   id="new-name"     placeholder="Full Name"          class="inp">
+      <select id="new-role" class="inp">
+        <option value="analyst">Analyst</option>
+        <option value="admin">Admin</option>
+      </select>
+      <input type="text"   id="new-temppass" placeholder="Temp Password"      class="inp">
+      <button class="btn-accent" onclick="addAnalyst()">Add Account</button>
+    </div>
+    <div id="admin-result" class="mono muted" style="font-size:0.78rem;margin-top:8px"></div>
+  </div>
+</div>
+<button class="admin-fab" onclick="document.getElementById('admin-drawer').style.display='block'" title="Admin Panel">⚙ Admin</button>
+{% endif %}
+
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

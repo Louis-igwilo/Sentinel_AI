@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sentinel AI | Admin</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}">
+</head>
+<body>
+
+<nav class="sentinel-nav">
+  <div class="nav-brand-section">
+    <div class="nav-brand">SENTINEL <span class="accent">AI</span></div>
+  </div>
+  <div class="nav-tabs">
+    <a class="nav-tab {% if request.path.endswith('/overview') %}active{% endif %}" href="/dashboard/overview">Overview</a>
+    <a class="nav-tab {% if request.path.endswith('/investigation') %}active{% endif %}" href="/dashboard/investigation">Investigation</a>
+    <a class="nav-tab {% if request.path.endswith('/threats') %}active{% endif %}" href="/dashboard/threats">Threats</a>
+    <a class="nav-tab {% if request.path.endswith('/users') %}active{% endif %}" href="/dashboard/users">Users</a>
+    <a class="nav-tab {% if request.path.endswith('/logs') %}active{% endif %}" href="/dashboard/logs">Logs</a>
+    <a class="nav-tab active" href="/dashboard/admin">Admin</a>
+    <a class="nav-tab {% if request.path.endswith('/settings') %}active{% endif %}" href="/dashboard/settings">Settings</a>
+  </div>
+  <div class="nav-right">
+    <button id="theme-toggle" class="theme-toggle" type="button" title="Toggle light/dark mode">☀</button>
+    <div class="nav-operator">{{ session['analyst_name'] }}</div>
+    <a class="btn-terminate" href="/logout">Logout</a>
+  </div>
+</nav>
+
+<div class="page-container">
+  <div class="admin-grid">
+    <div class="panel">
+      <div class="panel-header">Create Analyst Account</div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input id="email" class="form-input" placeholder="analyst@dtaa.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input id="name" class="form-input" placeholder="Sarah Chen">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role</label>
+          <select id="role" class="form-input">
+            <option value="analyst">Analyst</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Temporary Password</label>
+          <input id="tempPassword" class="form-input" placeholder="TempPass2024!">
+        </div>
+        <button type="button" class="btn-primary" onclick="createUser()">Create Analyst</button>
+        <div id="adminMessage" style="margin-top:14px; color: var(--muted); font-size:0.9rem;"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">Analyst Accounts</div>
+      <div class="panel-body" id="adminUserList">
+        <div class="empty-state">Loading accounts...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function loadUsers() {
+  const list = document.getElementById('adminUserList');
+  try {
+    const response = await fetch('/api/admin/users', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Unable to load users');
+    const data = await response.json();
+    list.innerHTML = '';
+
+    if (!data.users || !data.users.length) {
+      list.innerHTML = '<div class="empty-state">No analyst accounts found.</div>';
+      return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'user-table';
+    table.innerHTML = `
+      <thead>
+        <tr><th>Email</th><th>Name</th><th>Role</th><th>Action</th></tr>
+      </thead>
+      <tbody></tbody>
+    `;
+    data.users.forEach(user => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${user.email}</td>
+        <td>${user.name}</td>
+        <td>${user.role}</td>
+        <td><button class="btn-icon" type="button" data-email="${user.email}">Disable</button></td>
+      `;
+      table.querySelector('tbody').appendChild(row);
+    });
+    list.appendChild(table);
+    list.querySelectorAll('.btn-icon').forEach(button => {
+      button.addEventListener('click', () => disableUser(button.dataset.email));
+    });
+  } catch (error) {
+    list.innerHTML = '<div class="empty-state">Could not load analyst accounts.</div>';
+    document.getElementById('adminMessage').innerText = 'Unable to load accounts.';
+  }
+}
+
+async function createUser() {
+  const payload = {
+    email: document.getElementById('email').value,
+    name: document.getElementById('name').value,
+    role: document.getElementById('role').value,
+    temp_password: document.getElementById('tempPassword').value || 'TempPass2024!'
+  };
+
+  const response = await fetch('/api/admin/user/add', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json();
+  document.getElementById('adminMessage').innerText = data.status ? `Created ${data.email}` : `Error: ${data.error}`;
+  if (response.ok) {
+    loadUsers();
+  }
+}
+
+async function disableUser(email) {
+  document.getElementById('adminMessage').innerText = `Disabling ${email}...`;
+  try {
+    const response = await fetch('/api/admin/user/disable', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+    const data = await response.json();
+    document.getElementById('adminMessage').innerText = data.status ? `Disabled ${email}` : `Error: ${data.error}`;
+    if (response.ok) {
+      loadUsers();
+    }
+  } catch (err) {
+    document.getElementById('adminMessage').innerText = 'Failed to disable user.';
+  }
+}
+
+function _createToast(text, isError=false) {
+  const toast = document.createElement('div');
+  toast.innerText = text;
+  toast.style.position = 'fixed';
+  toast.style.right = '18px';
+  toast.style.bottom = '18px';
+  toast.style.padding = '10px 14px';
+  toast.style.background = isError ? '#6b1d1d' : 'var(--surface2)';
+  toast.style.color = 'var(--text)';
+  toast.style.border = '1px solid var(--border)';
+  toast.style.borderRadius = '6px';
+  toast.style.zIndex = 60;
+  document.body.appendChild(toast);
+  setTimeout(() => { toast.remove(); }, 4200);
+}
+
+loadUsers();
+</script>
+<script src="{{ url_for('static',filename='js/theme.js') }}"></script>
+</body>
+</html>

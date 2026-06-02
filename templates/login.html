@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentinel AI | Secure Login</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}">
+  <style>
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at top, rgba(88,166,255,0.14), transparent 35%), #0d1117;
+      color: var(--text);
+      font-family: var(--sans);
+    }
+    .login-panel {
+      width: min(420px, calc(100% - 32px));
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 36px;
+      box-shadow: var(--shadow);
+    }
+    .login-panel h1 {
+      margin: 0 0 6px;
+      font-family: var(--mono);
+      font-size: 1.5rem;
+      letter-spacing: 2px;
+    }
+    .login-panel p {
+      margin: 0 0 24px;
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 0.92rem;
+    }
+    .form-group { margin-bottom: 18px; }
+    .form-label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; }
+    .form-input { width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface2); color: var(--text); font-size: 0.95rem; outline: none; }
+    .form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(220,53,69,0.12); }
+    .btn-primary { width: 100%; padding: 12px 14px; border: none; border-radius: 10px; background: var(--accent); color: white; font-weight: 700; letter-spacing: 1px; cursor: pointer; }
+    .btn-primary:hover { background: #b02a37; }
+    .error-box { margin-bottom: 20px; padding: 12px 14px; background: rgba(220,53,69,0.12); border: 1px solid rgba(220,53,69,0.4); border-radius: 10px; color: #ff8c97; }
+    .hint { margin-top: 18px; color: var(--muted); font-size: 0.82rem; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="login-panel">
+    <h1>SENTINEL AI</h1>
+    <p>Secure access for analyst monitoring and threat investigation.</p>
+    {% if error %}
+    <div class="error-box">⚠ {{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="/login">
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" name="email" class="form-input" placeholder="analyst@dtaa.com" required autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input type="password" name="password" class="form-input" placeholder="Enter password" required>
+      </div>
+      <button type="submit" class="btn-primary">Authenticate</button>
+    </form>
+
+    <div class="hint">Use your corporate analyst credentials. First-time users will be prompted to reset their password.</div>
+  </div>
+</body>
+</html>

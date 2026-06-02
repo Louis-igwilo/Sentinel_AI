@@ -1,0 +1,20 @@
+{
+  "admin@dtaa.com": {
+    "password": "11d935d8293779365672c1e5be626f060fd21cfcb8146f82e7077fabfc36a836",
+    "name": "System Administrator",
+    "role": "admin",
+    "must_change": false
+  },
+  "analyst1@dtaa.com": {
+    "password": "f73cc505d0912beabb7084a28949fc3b6d37fb58f825444d1028c40194772c62",
+    "name": "Sarah Chen",
+    "role": "analyst",
+    "must_change": true
+  },
+  "analyst2@dtaa.com": {
+    "password": "f73cc505d0912beabb7084a28949fc3b6d37fb58f825444d1028c40194772c62",
+    "name": "Marcus Torres",
+    "role": "analyst",
+    "must_change": true
+  }
+}

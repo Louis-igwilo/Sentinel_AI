@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sentinel AI | Log Processing</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/style.css') }}">
+</head>
+<body>
+
+<nav class="sentinel-nav">
+  <div class="nav-brand-section">
+    <div class="nav-brand">SENTINEL <span class="accent">AI</span></div>
+  </div>
+  <div class="nav-tabs">
+    <a class="nav-tab {% if request.path.endswith('/overview') %}active{% endif %}" href="/dashboard/overview">Overview</a>
+    <a class="nav-tab {% if request.path.endswith('/investigation') %}active{% endif %}" href="/dashboard/investigation">Investigation</a>
+    <a class="nav-tab {% if request.path.endswith('/threats') %}active{% endif %}" href="/dashboard/threats">Threats</a>
+    <a class="nav-tab {% if request.path.endswith('/users') %}active{% endif %}" href="/dashboard/users">Users</a>
+    <a class="nav-tab {% if request.path.endswith('/logs') %}active{% endif %}" href="/dashboard/logs">Logs</a>
+    {% if session['analyst_role'] == 'admin' %}
+    <a class="nav-tab {% if request.path.endswith('/admin') %}active{% endif %}" href="/dashboard/admin">Admin</a>
+    {% endif %}
+    <a class="nav-tab active" href="/dashboard/upload">Log Upload</a>
+    <a class="nav-tab {% if request.path.endswith('/settings') %}active{% endif %}" href="/dashboard/settings">Settings</a>
+  </div>
+  <div class="nav-right">
+    <button id="theme-toggle" class="theme-toggle" type="button" title="Toggle light/dark mode">☀</button>
+    <div class="nav-operator">{{ session['analyst_name'] }}</div>
+    <a class="btn-terminate" href="/logout">Logout</a>
+  </div>
+</nav>
+
+<div class="page-container">
+  <div style="max-width: 900px; margin: 0 auto;">
+    <div class="panel">
+      <div class="panel-header">Upload & Process Logs</div>
+      <div class="panel-body">
+        <p style="color: var(--muted); margin-bottom: 20px;">
+          Upload a CSV or JSON file containing logs to be analyzed against the ML model. 
+          Max 100 logs per upload. JSON format: Array of log objects. CSV will be parsed with headers.
+        </p>
+
+        <div class="file-upload-zone" id="uploadZone">
+          <div style="font-size: 2rem; margin-bottom: 8px;">📁</div>
+          <div style="color: var(--text); font-weight: 600; margin-bottom: 4px;">
+            Click to upload or drag file here
+          </div>
+          <div style="color: var(--muted); font-size: 0.8rem;">
+            Supported: CSV, JSON (Max 100 logs)
+          </div>
+          <input type="file" id="fileInput" accept=".csv,.json" style="display: none;">
+        </div>
+
+        <div id="uploadStatus" style="margin-top: 20px; display: none; padding: 12px; background: var(--surface2); border-radius: 6px;">
+          <div id="statusMessage" style="color: var(--muted);"></div>
+          <div id="uploadProgress" style="height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden;">
+            <div id="progressBar" style="height: 100%; background: var(--accent); width: 0%; transition: width 0.3s;"></div>
+          </div>
+        </div>
+
+        <div id="resultsContainer" style="margin-top: 20px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const uploadZone = document.getElementById("uploadZone");
+const fileInput = document.getElementById("fileInput");
+const uploadStatus = document.getElementById("uploadStatus");
+const statusMessage = document.getElementById("statusMessage");
+const progressBar = document.getElementById("progressBar");
+const resultsContainer = document.getElementById("resultsContainer");
+
+uploadZone.addEventListener("click", () => fileInput.click());
+
+uploadZone.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  uploadZone.classList.add("dragover");
+});
+
+uploadZone.addEventListener("dragleave", () => {
+  uploadZone.classList.remove("dragover");
+});
+
+uploadZone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  uploadZone.classList.remove("dragover");
+  const files = e.dataTransfer.files;
+  if (files.length > 0) {
+    uploadFile(files[0]);
+  }
+});
+
+fileInput.addEventListener("change", () => uploadFile());
+
+async function uploadFile(droppedFile) {
+  const file = droppedFile || fileInput.files[0];
+  if (!file) return;
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  uploadStatus.style.display = "block";
+  statusMessage.innerText = "Processing...";
+  progressBar.style.width = "33%";
+
+  try {
+    const response = await fetch("/api/logs/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    progressBar.style.width = "66%";
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Upload failed");
+    }
+
+    const data = await response.json();
+    progressBar.style.width = "100%";
+
+    statusMessage.innerText = `✓ Processed ${data.count} logs successfully`;
+    displayResults(data.results || []);
+
+    fileInput.value = "";
+  } catch (error) {
+    statusMessage.innerText = `✗ ${error.message}`;
+    progressBar.style.width = "0%";
+  }
+}
+
+function displayResults(results) {
+  resultsContainer.innerHTML = "";
+
+  if (results.length === 0) {
+    resultsContainer.innerHTML = `<div class="empty-state">No results to display</div>`;
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.className = "user-table";
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>User</th>
+        <th>Risk</th>
+        <th>Score</th>
+        <th>Threat</th>
+        <th>Dept</th>
+        <th>Email</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+
+  results.slice(0, 50).forEach(result => {
+    const row = document.createElement("tr");
+    const riskColor = {
+      HIGH: "var(--risk-high)",
+      MEDIUM: "var(--risk-medium)",
+      LOW: "var(--risk-low)",
+    }[result.risk] || "var(--muted)";
+
+    row.innerHTML = `
+      <td><strong>${result.user_id}</strong></td>
+      <td style="color: ${riskColor}; font-weight: 600;">${result.risk}</td>
+      <td>${result.score.toFixed(4)}</td>
+      <td>${result.threat_category}</td>
+      <td>${result.department || "-"}</td>
+      <td>${result.email || "-"}</td>
+    `;
+    table.querySelector("tbody").appendChild(row);
+  });
+
+  resultsContainer.appendChild(table);
+
+  if (results.length > 50) {
+    const note = document.createElement("div");
+    note.style.marginTop = "12px";
+    note.style.color = "var(--muted)";
+    note.style.fontSize = "0.8rem";
+    note.innerText = `Showing 50 of ${results.length} results`;
+    resultsContainer.appendChild(note);
+  }
+}
+</script>
+<script src="{{ url_for('static',filename='js/theme.js') }}"></script>
+</body>
+</html>
