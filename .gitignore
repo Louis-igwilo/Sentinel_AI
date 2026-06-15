@@ -32,3 +32,6 @@ env/
 # OS files
 .DS_Store
 Thumbs.db
+
+!data/FINAL_insider_results.csv
+!isolation_forest_model.joblib
